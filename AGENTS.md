@@ -7,8 +7,8 @@ Read these files before changing the project:
 
 Project rules:
 
-- `/Users/face/utils/blurfoot` remains the source of truth until the user pushes the prepared local `main` branch to GitHub.
-- The GitHub repository is `https://github.com/ProjectConspiracy/blurfoot.git`. Its existing license-only commit `8c00bbe000c0d2e14665516ca95a8af6b43d17e6` must remain in history.
+- The GitHub repository at `https://github.com/ProjectConspiracy/blurfoot.git` is the shared source of truth. Initial baseline commit `a8a2fc7` is confirmed on remote `main`.
+- Preserve the repository's original license commit `8c00bbe000c0d2e14665516ca95a8af6b43d17e6` in history.
 - The project license is **GPL-3.0-only**.
 - Preserve the focused scope: top-down stealth, directional cameras, hikers, cover, photographs, and the trip home to High Den. Do not add unrelated mechanics without user approval.
 - The title is **Blurfoot**. Story references to Bigfoot describe the character and are intentional.
@@ -20,4 +20,8 @@ Project rules:
 - Do not commit `node_modules/`, `dist/`, `.playwright-cli/`, or `.DS_Store`.
 - Do not deploy, publish, or modify the Project Conspiracy website without confirming its authoritative checkout and the user-approved release scope.
 
-The local baseline is prepared on top of the existing GitHub license commit. For this initial publication, the user retains responsibility for `git push -u origin main`; leave that push to them. Never force-push or overwrite remote history.
+The slow-water and sight-cone increment is functionally verified: water is traversable at 35% speed, the three crossings remain normal speed, June Bowl is traversable, rocks remain solid, and visible cones clip against real sight occluders without changing detection. See `docs/PLAYTEST-2026-09-21.md` for route and ending evidence. A human feel check still remains.
+
+The project is ready for the first custom Bigfoot art-direction pass. Lock perspective, silhouette, scale, palette, and animation needs with the user before creating or importing an asset. Do not start asset production until that direction is approved.
+
+The user prefers publishing through GitHub Desktop because terminal Git selects the wrong GitHub account. Leave pushes to the user, do not change global credential settings, and never force-push or overwrite remote history.

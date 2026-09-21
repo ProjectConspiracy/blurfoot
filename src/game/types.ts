@@ -31,6 +31,13 @@ export interface WorldRoute {
   readonly width: number;
   readonly showOnMap: boolean;
 }
+/** A round-ended path corridor that carries Bigfoot's circular ground footprint across water. */
+export interface WaterCrossing {
+  readonly id: string;
+  readonly kind: 'bridge' | 'deadfall' | 'ford';
+  readonly points: readonly Point[];
+  readonly width: number;
+}
 export type LandmarkKind = 'hunter-camp' | 'logging-spur' | 'creek-crossing' | 'june-bowl' | 'high-den';
 export interface Landmark {
   readonly id: string;
@@ -96,6 +103,7 @@ export interface LevelData {
   readonly patrolPaths: readonly PatrolPath[];
   readonly terrainRegions: readonly TerrainRegion[];
   readonly routes: readonly WorldRoute[];
+  readonly waterCrossings: readonly WaterCrossing[];
   readonly landmarks: readonly Landmark[];
   readonly props: readonly WorldProp[];
   readonly terrainBlockers: readonly TerrainBlocker[];

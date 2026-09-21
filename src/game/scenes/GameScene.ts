@@ -27,6 +27,7 @@ import {
 import { evaluateCameraPhotograph } from '../rules/cameraObservation';
 import { createExplorationState, discoverNearbyCameras } from '../rules/exploration';
 import { calculatePhotoQuality } from '../rules/photoQuality';
+import { getTerrainSpeedMultiplier } from '../rules/terrainMovement';
 import { isPointInVisionCone, sampleVisibility } from '../rules/vision';
 import type { PatrolPath, Point } from '../types';
 import {
@@ -171,7 +172,13 @@ export class GameScene extends Phaser.Scene {
     }
 
     const movement = readMovement(this.inputState);
-    this.playerBody.setVelocity(movement.x * PLAYER_SPEED, movement.y * PLAYER_SPEED);
+    // Wading uses a circular ground footprint; solid collision keeps the 30×42 body.
+    const terrainSpeed = getTerrainSpeedMultiplier({
+      x: this.view.player.x,
+      y: this.view.player.y,
+      radius: this.playerBody.halfWidth,
+    }, FOREST_LEVEL);
+    this.playerBody.setVelocity(movement.x * PLAYER_SPEED * terrainSpeed, movement.y * PLAYER_SPEED * terrainSpeed);
     this.explorationState = discoverNearbyCameras(
       this.explorationState,
       { x: this.view.player.x, y: this.view.player.y },
@@ -477,6 +484,11 @@ export class GameScene extends Phaser.Scene {
         : null,
       photoFlash: this.photoFlash,
       photoFlashAlpha: this.photoFlashRemainingMs / PHOTO_FLASH_MS * 0.72,
+      wading: getTerrainSpeedMultiplier({
+        x: this.view.player.x,
+        y: this.view.player.y,
+        radius: this.playerBody.halfWidth,
+      }, FOREST_LEVEL) < 1,
     });
   }
 }

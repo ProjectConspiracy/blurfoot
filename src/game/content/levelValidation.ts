@@ -22,7 +22,7 @@ export function getLevelValidationErrors(level: LevelData): readonly string[] {
   }
 
   for (const collection of [
-    'trees', 'bushes', 'cameras', 'terrainRegions', 'routes', 'landmarks', 'props', 'terrainBlockers', 'patrolPaths',
+    'trees', 'bushes', 'cameras', 'terrainRegions', 'routes', 'waterCrossings', 'landmarks', 'props', 'terrainBlockers', 'patrolPaths',
   ] as const) {
     const seen = new Set<string>();
     for (const { id } of level[collection]) {
@@ -52,6 +52,13 @@ export function getLevelValidationErrors(level: LevelData): readonly string[] {
     for (const item of level[collection]) {
       item.points.forEach((point, index) => checkPoint(point, `${collection} ${item.id} point ${index}`));
     }
+  }
+  for (const crossing of level.waterCrossings) {
+    if (!Number.isFinite(crossing.width) || crossing.width <= 0) {
+      errors.push(`waterCrossings ${crossing.id} width must be finite and positive`);
+    }
+    if (crossing.points.length < 2) errors.push(`waterCrossings ${crossing.id} must contain at least 2 points`);
+    crossing.points.forEach((point, index) => checkPoint(point, `waterCrossings ${crossing.id} point ${index}`));
   }
   for (const landmark of level.landmarks) checkPoint(landmark.position, `landmarks ${landmark.id} position`);
   for (const prop of level.props) checkCircle({ ...prop.position, radius: prop.footprintRadius }, `props ${prop.id}`);

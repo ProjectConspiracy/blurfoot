@@ -14,7 +14,7 @@ function fixture(overrides: Partial<LevelData> = {}): LevelData {
   return {
     ...FOREST_LEVEL,
     trees: FOREST_LEVEL.trees.filter(({ id }) => id.startsWith('mount-')),
-    bushes: [], terrainRegions: [], routes: [], props: [], terrainBlockers: [],
+    bushes: [], terrainRegions: [], routes: [], waterCrossings: [], props: [], terrainBlockers: [],
     patrolPaths: ['a', 'b', 'c'].map((id) => ({
       id, points: [{ x: 100, y: 1000 }, { x: 300, y: 1000 }, { x: 300, y: 1200 }],
     })),
@@ -32,7 +32,7 @@ describe('expanded forest content', () => {
     expect(FOREST_LEVEL.trees).toHaveLength(48);
     expect(FOREST_LEVEL.bushes).toHaveLength(18);
     expect(FOREST_LEVEL.props).toHaveLength(22);
-    expect(FOREST_LEVEL.terrainBlockers).toHaveLength(32);
+    expect(FOREST_LEVEL.terrainBlockers).toHaveLength(17);
     expect(getLevelValidationErrors(FOREST_LEVEL)).toEqual([]);
   });
 
@@ -49,7 +49,7 @@ describe('expanded forest content', () => {
     });
   });
 
-  it('authors a collidable June Bowl pool below two sight-blocking basalt shelves', () => {
+  it('authors a wading pool below two sight-blocking basalt shelves', () => {
     const pool = FOREST_LEVEL.terrainBlockers.find(({ id }) => id === 'june-bowl-pool');
     const shelves = FOREST_LEVEL.terrainBlockers.filter(({ id }) => id.startsWith('june-bowl-shelf-'));
     const bowlBlockers = FOREST_LEVEL.terrainBlockers
@@ -66,6 +66,17 @@ describe('expanded forest content', () => {
     expect(shelves.every(({ y }) => y < pool!.y)).toBe(true);
   });
 
+  it('replaces creek collision discs with three explicit normal-speed crossings', () => {
+    expect(FOREST_LEVEL.terrainBlockers.filter(({ kind }) => kind === 'water').map(({ id }) => id))
+      .toEqual(['june-bowl-pool']);
+    expect(FOREST_LEVEL.waterCrossings.map(({ kind, points }) => ({ kind, center: points[1] })))
+      .toEqual([
+        { kind: 'bridge', center: { x: 1320, y: 1650 } },
+        { kind: 'deadfall', center: { x: 1770, y: 1400 } },
+        { kind: 'ford', center: { x: 2130, y: 1080 } },
+      ]);
+  });
+
   it('keeps all human patrol points in the lower activity region', () => {
     for (const point of FOREST_LEVEL.patrolPaths.flatMap(({ points }) => points)) {
       expect(point.x).toBeLessThanOrEqual(1600);
@@ -74,14 +85,14 @@ describe('expanded forest content', () => {
   });
 
   it('blocks the reproduced walk around the north creek endpoint with authored terrain', () => {
-    expect(FOREST_LEVEL.terrainBlockers.some((blocker) => segmentIntersectsCircle(
+    expect(FOREST_LEVEL.terrainBlockers.filter(({ kind }) => kind === 'rock').some((blocker) => segmentIntersectsCircle(
       { x: 2500, y: 590 },
       { x: 2268, y: 590 },
       { ...blocker, radius: blocker.radius + 21 },
     ))).toBe(true);
   });
 
-  it('routes the eastern approach past the bowl and through the ford without closed-water intersections', () => {
+  it('routes the eastern approach past the bowl and through the ford without rock intersections', () => {
     const route = FOREST_LEVEL.routes.find(({ id }) => id === 'eastern-basalt-route');
     expect(route).toBeDefined();
     const points = route!.points;
@@ -93,7 +104,7 @@ describe('expanded forest content', () => {
     ]);
     const blockedSegments: string[] = [];
     for (let index = 1; index < points.length; index += 1) {
-      for (const blocker of FOREST_LEVEL.terrainBlockers.filter(({ kind }) => kind === 'water')) {
+      for (const blocker of FOREST_LEVEL.terrainBlockers.filter(({ kind }) => kind === 'rock')) {
         if (segmentIntersectsCircle(points[index - 1], points[index], {
           ...blocker, radius: blocker.radius + 21,
         })) blockedSegments.push(`${index - 1}: ${blocker.id}`);
@@ -102,12 +113,12 @@ describe('expanded forest content', () => {
     expect(blockedSegments).toEqual([]);
   });
 
-  it('keeps every playable route clear of trees and terrain for the full player body', () => {
+  it('keeps every playable route clear of trees and solid rock for the full player body', () => {
     const conflicts: string[] = [];
     const playerClearance = Math.hypot(15, 21);
     for (const route of FOREST_LEVEL.routes.filter(({ kind }) => kind !== 'creek')) {
       for (let index = 1; index < route.points.length; index += 1) {
-        for (const obstacle of [...FOREST_LEVEL.trees, ...FOREST_LEVEL.terrainBlockers]) {
+        for (const obstacle of [...FOREST_LEVEL.trees, ...FOREST_LEVEL.terrainBlockers.filter(({ kind }) => kind === 'rock')]) {
           if (segmentIntersectsCircle(route.points[index - 1], route.points[index], {
             ...obstacle, radius: obstacle.radius + playerClearance,
           })) conflicts.push(`${route.id} segment ${index - 1}: ${obstacle.id}`);
@@ -143,6 +154,31 @@ describe('getLevelValidationErrors', () => {
       .toEqual(['width must be finite and positive', 'height must be finite and positive']);
     expect(getLevelValidationErrors(fixture({ width: Infinity }))[0])
       .toBe('width must be finite and positive');
+  });
+
+  it('rejects duplicate crossing IDs', () => {
+    const crossing = { id: 'bridge', kind: 'bridge' as const, width: 76, points: [{ x: 100, y: 100 }, { x: 200, y: 100 }] };
+    expect(getLevelValidationErrors(fixture({ waterCrossings: [crossing, crossing] })))
+      .toEqual(['duplicate waterCrossings id: bridge']);
+  });
+
+  it.each([0, -1, Infinity, NaN])('rejects crossing width %s', (width) => {
+    expect(getLevelValidationErrors(fixture({ waterCrossings: [{
+      id: 'bridge', kind: 'bridge', width, points: [{ x: 100, y: 100 }, { x: 200, y: 100 }],
+    }] }))).toEqual(['waterCrossings bridge width must be finite and positive']);
+  });
+
+  it('rejects crossings with too few points and non-finite or out-of-bounds points', () => {
+    expect(getLevelValidationErrors(fixture({ waterCrossings: [
+      { id: 'empty', kind: 'ford', width: 76, points: [] },
+      { id: 'short', kind: 'bridge', width: 76, points: [{ x: 100, y: 100 }] },
+      { id: 'invalid', kind: 'deadfall', width: 64, points: [{ x: NaN, y: 100 }, { x: 100, y: 2201 }] },
+    ] }))).toEqual([
+      'waterCrossings empty must contain at least 2 points',
+      'waterCrossings short must contain at least 2 points',
+      'waterCrossings invalid point 0 is out of bounds',
+      'waterCrossings invalid point 1 is out of bounds',
+    ]);
   });
 
   it.each([

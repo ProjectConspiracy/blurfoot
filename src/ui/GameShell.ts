@@ -252,10 +252,10 @@ export class GameShell {
               <p class="eyebrow">Field briefing</p>
               <h2>Reach High Den</h2>
               <dl class="controls-list">
-                <div><dt><kbd>WASD</kbd> / <kbd>Arrows</kbd></dt><dd>Move through the forest</dd></div>
+                <div><dt><kbd>WASD</kbd> / <kbd>Arrows</kbd></dt><dd>Move through the forest; water slows you to a wade</dd></div>
                 <div><dt>Hold <kbd>E</kbd> for 2 seconds</dt><dd>Disable a nearby trail camera; releasing E or stepping away resets progress</dd></div>
               </dl>
-              <p class="briefing-note">Blue cones belong to tree cameras; yellow cones belong to hikers. Approaching a camera from the side or rear is safer. Bushes soften a photograph, while tree trunks stop sight entirely. The search crew is concentrated around its lower-forest camp. Your field map records major landmarks and any trail cameras you pass.</p>
+              <p class="briefing-note">Blue cones belong to tree cameras; yellow cones belong to hikers. Approaching a camera from the side or rear is safer. Bushes soften a photograph, while tree trunks stop sight entirely. The bridge, deadfall, and basalt ford let you cross Swift Creek at walking speed. Your field map records major landmarks and any trail cameras you pass.</p>
               <button class="primary-button" type="button" data-action="continue" data-focus-target="continue">Continue</button>
             </div>
           </section>

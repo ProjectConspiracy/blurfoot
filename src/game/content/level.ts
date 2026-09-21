@@ -5,7 +5,7 @@
  */
 import { createMountedCamera } from '../rules/cameraObservation';
 import { CAMERA_IDS } from '../rules/gameState';
-import type { Camera, LevelData, PropKind, TerrainBlocker, Tree, WorldProp } from '../types';
+import type { Camera, LevelData, PropKind, TerrainBlocker, Tree, WaterCrossing, WorldProp } from '../types';
 
 const CAMERA_RANGE = 260;
 const CAMERA_HALF_ANGLE = Math.PI * 26 / 180;
@@ -90,6 +90,19 @@ const routes = [
   { id: 'swift-creek', kind: 'creek', width: 118, showOnMap: true, points: [{ x: 850, y: 2200 }, { x: 1320, y: 1650 }, { x: 1770, y: 1400 }, { x: 2130, y: 1080 }, { x: 2450, y: 650 }] },
 ] as const;
 
+// Each crossing follows its route through the creek and extends beyond both banks.
+const waterCrossings: readonly WaterCrossing[] = [
+  { id: 'access-bridge', kind: 'bridge', width: 76, points: [
+    { x: 1434, y: 1740 }, { x: 1320, y: 1650 }, { x: 1212, y: 1570 },
+  ] },
+  { id: 'deadfall-crossing', kind: 'deadfall', width: 64, points: [
+    { x: 1780.5, y: 1550.5 }, { x: 1770, y: 1400 }, { x: 1810, y: 1260 },
+  ] },
+  { id: 'basalt-ford', kind: 'ford', width: 76, points: [
+    { x: 2246.8, y: 1115.2 }, { x: 2130, y: 1080 }, { x: 2040, y: 1010 },
+  ] },
+];
+
 const propFootprints: Readonly<Record<PropKind, number>> = {
   tent: 36, pickup: 48, atv: 26, canopy: 42, table: 28, generator: 24,
   battery: 14, crate: 16, cooler: 18, 'radio-mast': 10, 'thermal-tripod': 16,
@@ -115,11 +128,6 @@ const props: readonly WorldProp[] = ([
 }));
 
 const terrainBlockers: readonly TerrainBlocker[] = [
-  ...([
-    [880, 2142], [970, 2055], [1060, 1960], [1150, 1865], [1235, 1765],
-    [1435, 1575], [1530, 1510], [1620, 1450], [1885, 1310], [1975, 1225],
-    [2050, 1150], [2215, 990], [2285, 890], [2355, 790], [2420, 690],
-  ] as const).map(([x, y], index) => ({ id: `water-${index + 1}`, kind: 'water' as const, x, y, radius: 58, blocksSight: false })),
   { id: 'june-bowl-pool', kind: 'water', x: 2870, y: 985, radius: 80, blocksSight: false },
   ...([
     [460, 520, 72], [680, 430, 60], [1450, 510, 74], [1850, 440, 68],
@@ -141,6 +149,7 @@ export const FOREST_LEVEL: LevelData = {
   trees,
   terrainRegions,
   routes,
+  waterCrossings,
   props,
   terrainBlockers,
   landmarks: [

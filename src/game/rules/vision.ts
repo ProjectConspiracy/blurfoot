@@ -21,6 +21,42 @@ function length(vector: Point): number {
   return Math.hypot(vector.x, vector.y);
 }
 
+/** A visual fan whose sampled rays stop at their nearest circular occluder. */
+export function buildVisionPolygon(
+  cone: VisionCone,
+  occluders: readonly Circle[],
+  segments = 64,
+): readonly Point[] {
+  const segmentCount = Number.isFinite(segments) && segments >= 1 ? Math.floor(segments) : 64;
+  const facing = Math.atan2(cone.direction.y, cone.direction.x);
+  const points: Point[] = [{ ...cone.origin }];
+  for (let index = 0; index <= segmentCount; index += 1) {
+    const angle = facing - cone.halfAngleRadians + 2 * cone.halfAngleRadians * index / segmentCount;
+    const direction = { x: Math.cos(angle), y: Math.sin(angle) };
+    let distance = Math.max(0, cone.range);
+    for (const circle of occluders) {
+      const offset = { x: circle.x - cone.origin.x, y: circle.y - cone.origin.y };
+      const outsideDistanceSquared = offset.x ** 2 + offset.y ** 2 - circle.radius ** 2;
+      if (outsideDistanceSquared <= EPSILON) {
+        distance = 0;
+        break;
+      }
+      const projection = offset.x * direction.x + offset.y * direction.y;
+      const discriminant = projection ** 2 - outsideDistanceSquared;
+      if (discriminant < -EPSILON) continue;
+      const halfChord = Math.sqrt(Math.max(0, discriminant));
+      // Both roots lie behind the origin when the far surface is still negative.
+      if (projection + halfChord < -EPSILON) continue;
+      distance = Math.min(distance, Math.max(0, projection - halfChord));
+    }
+    points.push({
+      x: cone.origin.x + direction.x * distance,
+      y: cone.origin.y + direction.y * distance,
+    });
+  }
+  return points;
+}
+
 /** Returns true when a target lies in both the angular and distance bounds of a cone. */
 export function isPointInVisionCone(point: Point, cone: VisionCone): boolean {
   const offset = { x: point.x - cone.origin.x, y: point.y - cone.origin.y };

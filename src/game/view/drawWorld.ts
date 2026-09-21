@@ -4,9 +4,12 @@
  * See LICENSE for the full license terms.
  */
 import Phaser from 'phaser';
+import { getSightOccluders } from '../content/levelValidation';
 import type { CameraId } from '../rules/gameState';
 import { createMinimapModel, projectWorldPoint } from '../rules/minimap';
-import type { LevelData, Point, TerrainKind, WorldProp } from '../types';
+import { getSolidTerrain } from '../rules/terrainMovement';
+import { buildVisionPolygon } from '../rules/vision';
+import type { IdentifiedCircle, LevelData, Point, TerrainKind, WaterCrossing, WorldProp } from '../types';
 
 export interface HikerRenderState {
   readonly position: Point;
@@ -26,6 +29,7 @@ export interface WorldRenderState {
   } | null;
   readonly photoFlash: 'clear' | 'blurry' | null;
   readonly photoFlashAlpha: number;
+  readonly wading: boolean;
 }
 
 export interface WorldView {
@@ -40,6 +44,9 @@ export interface WorldView {
   readonly cones: Phaser.GameObjects.Graphics;
   readonly cameraMarks: Phaser.GameObjects.Graphics;
   readonly cameraProgress: Phaser.GameObjects.Graphics;
+  readonly waterRipples: Phaser.GameObjects.Graphics;
+  readonly sightOccluders: readonly IdentifiedCircle[];
+  readonly cameraSightPolygons: ReadonlyMap<CameraId, readonly Point[]>;
   readonly flash: Phaser.GameObjects.Rectangle;
   readonly minimapBase: Phaser.GameObjects.Graphics;
   readonly minimapDynamic: Phaser.GameObjects.Graphics;
@@ -48,6 +55,54 @@ export interface WorldView {
 const VISION_RANGE = 340;
 const VISION_HALF_ANGLE = Phaser.Math.DegToRad(35);
 const MINIMAP_RECT = { x: 760, y: 395, width: 180, height: 125 };
+
+/** Round joins and caps match the capsules used by the terrain movement rule. */
+function drawRibbon(
+  graphics: Phaser.GameObjects.Graphics,
+  points: readonly Point[],
+  width: number,
+  color: number,
+  alpha = 1,
+): void {
+  graphics.lineStyle(width, color, alpha);
+  graphics.strokePoints([...points]);
+  graphics.fillStyle(color, alpha);
+  points.forEach(({ x, y }) => graphics.fillCircle(x, y, width / 2));
+}
+
+function drawCrossing(graphics: Phaser.GameObjects.Graphics, crossing: WaterCrossing): void {
+  const { points, width, kind } = crossing;
+  const color = kind === 'bridge' ? 0x9a8060 : kind === 'deadfall' ? 0x766048 : 0x7e877b;
+  drawRibbon(graphics, points, width + 4, 0x263b35);
+  drawRibbon(graphics, points, width, color);
+  for (let i = 1; i < points.length; i += 1) {
+    const start = points[i - 1];
+    const end = points[i];
+    const length = Math.hypot(end.x - start.x, end.y - start.y);
+    if (length === 0) continue;
+    const dx = (end.x - start.x) / length;
+    const dy = (end.y - start.y) / length;
+    const halfWidth = width / 2 - 5;
+    if (kind === 'deadfall') {
+      graphics.lineStyle(3, 0xb19668, 0.75);
+      for (const offset of [-halfWidth, 0, halfWidth]) {
+        graphics.lineBetween(start.x - dy * offset, start.y + dx * offset, end.x - dy * offset, end.y + dx * offset);
+      }
+    } else {
+      for (let distance = 8; distance < length; distance += kind === 'bridge' ? 16 : 27) {
+        const x = start.x + dx * distance;
+        const y = start.y + dy * distance;
+        if (kind === 'bridge') {
+          graphics.lineStyle(2, 0x594936, 0.8);
+          graphics.lineBetween(x - dy * halfWidth, y + dx * halfWidth, x + dy * halfWidth, y - dx * halfWidth);
+        } else {
+          graphics.fillStyle(0xb1b3a0, 0.8);
+          graphics.fillEllipse(x, y, 22, 13);
+        }
+      }
+    }
+  }
+}
 
 function drawTerrain(graphics: Phaser.GameObjects.Graphics, level: LevelData): void {
   const colors: Record<TerrainKind, number> = {
@@ -59,9 +114,10 @@ function drawTerrain(graphics: Phaser.GameObjects.Graphics, level: LevelData): v
     graphics.fillPoints([...region.points], true);
   });
   level.routes.filter(({ kind }) => kind === 'creek').forEach((route) => {
-    graphics.lineStyle(route.width, 0x1e3b44);
-    graphics.strokePoints([...route.points]);
-    graphics.lineStyle(24, 0x719da3, 0.45);
+    drawRibbon(graphics, route.points, route.width + 8, 0x78857c);
+    drawRibbon(graphics, route.points, route.width, 0x285766);
+    drawRibbon(graphics, route.points, route.width * 0.55, 0x356777);
+    graphics.lineStyle(3, 0x91bbc0, 0.55);
     graphics.strokePoints([...route.points]);
   });
   level.terrainBlockers.forEach((blocker) => {
@@ -112,7 +168,7 @@ function drawTerrain(graphics: Phaser.GameObjects.Graphics, level: LevelData): v
       );
     });
   }
-  // The authored route strokes bridge the creek at its three navigable gaps.
+  // Explicit crossing surfaces keep the fast paths readable over the water.
   level.routes.filter(({ kind }) => kind !== 'creek').forEach((route) => {
     graphics.lineStyle(route.width + 4, 0x24372d, 0.55);
     graphics.strokePoints([...route.points]);
@@ -121,6 +177,7 @@ function drawTerrain(graphics: Phaser.GameObjects.Graphics, level: LevelData): v
     graphics.lineStyle(2, 0xb8ac85, 0.4);
     graphics.strokePoints([...route.points]);
   });
+  level.waterCrossings.forEach((crossing) => drawCrossing(graphics, crossing));
 }
 
 function drawProp(graphics: Phaser.GameObjects.Graphics, prop: WorldProp): void {
@@ -259,6 +316,13 @@ function drawProp(graphics: Phaser.GameObjects.Graphics, prop: WorldProp): void 
 }
 
 export function drawWorld(scene: Phaser.Scene, level: LevelData): WorldView {
+  const sightOccluders = getSightOccluders(level);
+  const cameraSightPolygons = new Map(level.cameras.map((camera) => [camera.id, buildVisionPolygon({
+    origin: camera.position,
+    direction: camera.direction,
+    range: camera.visionRange,
+    halfAngleRadians: camera.visionHalfAngleRadians,
+  }, sightOccluders.filter(({ id }) => id !== camera.mountTreeId))]));
   scene.add.rectangle(level.width / 2, level.height / 2, level.width, level.height, 0x183c2a);
   const terrainGraphics = scene.add.graphics().setDepth(0.1);
   drawTerrain(terrainGraphics, level);
@@ -266,7 +330,7 @@ export function drawWorld(scene: Phaser.Scene, level: LevelData): WorldView {
   propGraphics.lineStyle(2, 0x182722);
   propGraphics.strokePoints([{ x: 970, y: 1360 }, { x: 1030, y: 1375 }, { x: 1080, y: 1330 }, { x: 1110, y: 1360 }, { x: 1134, y: 1360 }]);
   level.props.forEach((prop) => drawProp(propGraphics, prop));
-  const terrainBlockers = level.terrainBlockers.map((blocker) => (
+  const terrainBlockers = getSolidTerrain(level).map((blocker) => (
     scene.add.circle(blocker.x, blocker.y, blocker.radius, 0, 0).setVisible(false)
   ));
   [
@@ -362,6 +426,7 @@ export function drawWorld(scene: Phaser.Scene, level: LevelData): WorldView {
   const cones = scene.add.graphics().setDepth(2);
   const cameraMarks = scene.add.graphics().setDepth(6);
   const cameraProgress = scene.add.graphics().setDepth(5);
+  const waterRipples = scene.add.graphics().setDepth(6.1);
   const hikers = level.patrolPaths.map((path) => {
     const start = path.points[0];
     return scene.add.circle(start.x, start.y, 13, 0xe4c95c)
@@ -405,6 +470,9 @@ export function drawWorld(scene: Phaser.Scene, level: LevelData): WorldView {
     cones,
     cameraMarks,
     cameraProgress,
+    waterRipples,
+    sightOccluders,
+    cameraSightPolygons,
     flash,
     minimapBase,
     minimapDynamic,
@@ -412,6 +480,13 @@ export function drawWorld(scene: Phaser.Scene, level: LevelData): WorldView {
 }
 
 export function renderWorld(view: WorldView, level: LevelData, state: WorldRenderState): void {
+  view.waterRipples.clear();
+  if (state.wading) {
+    view.waterRipples.lineStyle(2, 0xb3d6d8, 0.8);
+    view.waterRipples.strokeEllipse(view.player.x, view.player.y + 12, 46, 17);
+    view.waterRipples.lineStyle(1, 0x8ebbc2, 0.5);
+    view.waterRipples.strokeEllipse(view.player.x, view.player.y + 12, 61, 24);
+  }
   view.cones.clear();
   state.hikers.forEach((hiker, index) => {
     const hikerView = view.hikers[index];
@@ -420,15 +495,12 @@ export function renderWorld(view: WorldView, level: LevelData, state: WorldRende
     }
 
     hikerView.setPosition(hiker.position.x, hiker.position.y);
-    const angle = Math.atan2(hiker.direction.y, hiker.direction.x);
-    const conePoints: Phaser.Types.Math.Vector2Like[] = [{ x: hiker.position.x, y: hiker.position.y }];
-    for (let step = 0; step <= 12; step += 1) {
-      const rayAngle = angle - VISION_HALF_ANGLE + (VISION_HALF_ANGLE * 2 * step / 12);
-      conePoints.push({
-        x: hiker.position.x + Math.cos(rayAngle) * VISION_RANGE,
-        y: hiker.position.y + Math.sin(rayAngle) * VISION_RANGE,
-      });
-    }
+    const conePoints = [...buildVisionPolygon({
+      origin: hiker.position,
+      direction: hiker.direction,
+      range: VISION_RANGE,
+      halfAngleRadians: VISION_HALF_ANGLE,
+    }, view.sightOccluders)];
     view.cones.fillStyle(0xf2db65, 0.13);
     view.cones.fillPoints(conePoints, true);
     view.cones.lineStyle(1, 0xf2db65, 0.28);
@@ -441,16 +513,7 @@ export function renderWorld(view: WorldView, level: LevelData, state: WorldRende
       return;
     }
 
-    const facingAngle = Math.atan2(camera.direction.y, camera.direction.x);
-    const conePoints: Phaser.Types.Math.Vector2Like[] = [camera.position];
-    for (let step = 0; step <= 12; step += 1) {
-      const rayAngle = facingAngle - camera.visionHalfAngleRadians
-        + (camera.visionHalfAngleRadians * 2 * step / 12);
-      conePoints.push({
-        x: camera.position.x + Math.cos(rayAngle) * camera.visionRange,
-        y: camera.position.y + Math.sin(rayAngle) * camera.visionRange,
-      });
-    }
+    const conePoints = [...(view.cameraSightPolygons.get(camera.id) ?? [])];
     view.cones.fillStyle(0x8eb7c5, 0.09);
     view.cones.fillPoints(conePoints, true);
     view.cones.lineStyle(1, 0x8eb7c5, 0.22);
